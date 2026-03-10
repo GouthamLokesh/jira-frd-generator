@@ -5,20 +5,27 @@ from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 import docx
 from openai import OpenAI
-import google.generativeai as genai
+from google import genai as google_genai
 import json
 import io
 import PyPDF2
 
-# Load environment variables from the user's specific file
+# Load environment variables from the user's specific file (local dev)
 load_dotenv("APIKey.env")
 
-# Configuration
-JIRA_BASE_URL = os.getenv("JIRA_BASE_URL")
-JIRA_EMAIL = os.getenv("JIRA_EMAIL")
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Configuration — supports both Streamlit Cloud secrets and local .env
+def get_secret(key):
+    """Try st.secrets first (Streamlit Cloud), fall back to env var (local)."""
+    try:
+        return st.secrets[key]
+    except Exception:
+        return os.getenv(key)
+
+JIRA_BASE_URL = get_secret("JIRA_BASE_URL")
+JIRA_EMAIL = get_secret("JIRA_EMAIL")
+JIRA_API_TOKEN = get_secret("JIRA_API_TOKEN")
+OPENAI_API_KEY = get_secret("OPENAI_API_KEY")
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
 st.set_page_config(page_title="Jira to FRD Generator", page_icon="📝", layout="wide")
 
@@ -411,9 +418,12 @@ def generate_frd_mapping(summary, description, attachments_text):
     # Fallback to Gemini if OpenAI failed or wasn't provided
     if GEMINI_API_KEY:
         try:
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
-            response = model.generate_content(prompt)
+            client = google_genai.Client(api_key=GEMINI_API_KEY)
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=google_genai.types.GenerateContentConfig(response_mime_type="application/json")
+            )
             return json.loads(response.text)
         except Exception as e:
             st.error(f"Error calling Gemini API: {str(e)}")
